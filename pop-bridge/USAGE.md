@@ -5,7 +5,7 @@ describe the intended workflow; review your specific paths and account mapping
 before local activation. Begin with a disposable profile and recoverable backups,
 not your only working mail archive. No existing profile is modified automatically.
 
-This package supplies POP receiving only. It does not supply SMTP sending, NNTP,
+This subdirectory supplies POP receiving only. It does not supply SMTP sending, NNTP,
 OAuth, an Agent license, or the patched Wine build. It does not reproduce every
 feature of Larry's separately configured Mail and News launcher.
 
@@ -14,7 +14,17 @@ feature of Larry's separately configured Mail and News launcher.
 Use the ordinary Linux desktop user, not root or sudo. The tested target is this
 Debian 12/X11 host with Python 3, Bubblewrap and the working custom Wine build.
 This is not a claim of testing on a fresh Debian installation, Linux Mint or
-Wayland. See the separately published Wine build guide for the build procedure.
+Wayland. See the [Debian guide](../docs/DEBIAN12.md) for the Wine build procedure;
+start with the [repository README](../README.md) for the overall sequence.
+
+The Wine-build dependency list is not the POP runtime dependency list. On the
+destination Debian desktop, as the administrator via sudo, review and install
+Python 3 and Bubblewrap before attempting this component. Expected: apt completes
+without unexpected removals/upgrades. Stop on package errors or if unprivileged
+Bubblewrap/user namespaces are prohibited; do not bypass that by running as root.
+Copy this command into a terminal on that Debian desktop:
+
+> sudo apt-get install --no-install-recommends python3 bubblewrap
 
 Have Agent installed in a dedicated, user-owned Wine prefix and a recoverable
 backup of the profile. Keep its mail data inside that prefix: this launcher does
@@ -27,7 +37,7 @@ Keep these locations separate (paths below are descriptions, not shell input):
 
 | Location | Contents and handling |
 | --- | --- |
-| Package directory | Python code and core modules; keep the supplied layout intact. |
+| Package directory | The repository's pop-bridge/ directory; keep its modules and core/ intact. |
 | Setup directory | Private config, imported history and account state; never publish. |
 | Wine prefix | Agent program, configuration, stored credentials and local messages. |
 | Wine build directory | The matching Wine and wineserver executables and libraries. |
@@ -50,12 +60,12 @@ rejects overlong paths; no automatic relocation or permission repair occurs.
    Expected: complete history for that mailbox, with snapshots owned by this user
    and mode 0600. Stop on missing or ambiguous history. Message DAT/IDX files and
    deferred-message ledgers are not substitutes. Do not alter source mail files.
-3. In a terminal on that Linux desktop, as the same user, with the portable package
-   directory as the working directory, run the offline setup helper below.
+3. In a terminal on that Linux desktop, as the same user, with the repository's
+   pop-bridge/ directory as the working directory, run the offline setup helper below.
    Expected: prompts for a new destination and account metadata, never a password.
    Stop on any error; retain partial output and do not reuse its destination.
 
-Step 3's copyable command goes in that terminal, in the package directory:
+Step 3's copyable command goes in that terminal, in the pop-bridge/ directory:
 
 > python3 setup_bridge.py
 
@@ -71,7 +81,7 @@ Step 3's copyable command goes in that terminal, in the package directory:
    Agent. A deliberate no-history start can re-download old mail; use it only
    when that is actually intended, never to bypass missing history.
 
-See SETUP.md for exact import restrictions and interruption behavior.
+See [SETUP.md](SETUP.md) for exact import restrictions and interruption behavior.
 
 # 4. Mapping the configuration to Agent
 
@@ -172,7 +182,7 @@ GUI/navigation/normal-close test passed on the actual desktop account. The
 portable multi-account combination has not been tested with real credentials or
 a real mail store. This draft is not a migration or production activation grant.
 
-The included bridge source and documentation carry the MIT license in LICENSE.
+The included bridge source and documentation carry the [MIT license](../LICENSE).
 Source-only packaging excludes records, private setup, AGENT.INI, mail, UID ledgers,
 credentials, Wine/Agent binaries and stale test-only launch artifacts. Do not
 upload your private development or runtime directories wholesale. The license

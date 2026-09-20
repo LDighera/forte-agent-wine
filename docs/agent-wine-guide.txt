@@ -1,0 +1,224 @@
+FORTE AGENT UNDER WINE - EXPERIENCE REPORT
+
+Combined guide, Debian recipes and experimental POP source:
+https://github.com/LDighera/forte-agent-wine
+
+Start with the repository README.md. The build/install procedure is
+docs/DEBIAN12.md; its scripts and package list are in debian/. Portable
+POP receiving is a separate stage described in pop-bridge/USAGE.md.
+This text records the working host, not a turnkey installer or proof
+of the portable package on a fresh machine. Packaging references were
+updated September 20, 2026; the host observations remain as recorded.
+
+Several readers asked how I got Forte Agent working under Linux. Here
+are the components and the practical sequence that worked here, plus
+an important distinction between running Agent and reproducing our
+mail-retrieval arrangement.
+
+This work was made possible through my collaboration with OpenAI
+Codex. Codex did the investigation, build and integration work; I
+exercised Agent and checked its behavior on the desktop. The Wine fix
+itself is upstream Wine work, not a patch invented by Codex.
+
+1. The combination actually tested
+
+The working application is my licensed Forte Agent 8.00.32.1272,
+running on Debian 12 Bookworm with a KDE/X11 desktop. Its existing
+mail/news archive was about 28 GiB when migrated from Windows. This
+is not just a successful installation with an empty database.
+
+The runtime is a private, side-by-side build of Wine 11.14, using
+new WoW64 support for the 32-bit application, with one upstream fix
+added. Program and profile storage are on native Linux ext4. Wine
+and Agent run as my ordinary desktop user, never as root.
+
+I have not tested this recipe on Linux Mint and do not plan to do so.
+I am also not claiming that the newest Wine release needs rebuilding:
+the version described here is the specific combination we tested.
+
+2. The Wine fix and build details
+
+Our Wine 11.14 source includes this exact upstream commit:
+
+a1bae27f21b53fa3ac6be6b08f4cbfb441360ade
+
+Its title is "win32u: Don't ignore raw mouse input." It addresses Wine
+bug 59986. The change is in dlls/win32u/input.c. Our failing sessions
+had enormous numbers of unknown-input-message diagnostics; successful
+interactive sessions followed the corrected build. This does not prove
+that every earlier retrieval crash had that same cause.
+
+The upstream change, including its complete diff, is here:
+https://github.com/wine-mirror/wine/commit/a1bae27f21b53fa3ac6be6b08f4cbfb441360ade
+
+Wine's bug reference is:
+https://bugs.winehq.org/show_bug.cgi?id=59986
+
+For someone reproducing that exact build, the sequence is: obtain the
+official Wine 11.14 source, apply the referenced change, configure in
+a separate empty build directory, build, and install into a separate
+Wine installation directory. Do not overwrite the distribution Wine.
+The following are build-setting references, not a complete command:
+
+--enable-archs=i386,x86_64
+--with-mingw=clang
+--prefix=<the separate Wine installation directory>
+
+We used Debian's Clang/LLD/LLVM 14 for the Windows PE targets. The
+LLVM tools, including llvm-dlltool, mattered. An earlier GCC/MinGW
+build failed in oleaut32's VarR4FromUI8; switching that build path
+to Clang avoided it. Normal Wine build prerequisites, including
+the relevant development libraries, Bison and Flex, are still needed.
+These three configure settings are not a complete package-dependency
+list for another distribution.
+
+Building in the intended build directory matters: do not run configure
+from your home directory by accident. Both patched and unpatched builds
+can report "wine-11.14", so that version string alone does not establish
+whether the fix is present. Do not apply it twice to a newer source tree
+which already contains it.
+
+3. Preserve the profile, then establish offline operation
+
+For reproduction, work on your own Linux desktop as your ordinary
+user. Keep the source Agent installation closed while making its
+backup/copy, and keep that original untouched. Stop if the source
+cannot be closed cleanly or the backup cannot be verified.
+
+Use a separate Wine prefix and explicitly select the intended Wine
+executable and its matching wineserver. Our working configuration uses
+WINEARCH=wow64; it is not an instruction to change the architecture
+of an existing prefix. The original Agent installer was used, and
+Wine Gecko 2.47.4 x86 was installed in the setup we carried forward.
+No need for Microsoft .NET was demonstrated for the tested functions.
+
+Our executable is under the prefix's Program Files (x86)/Agent, while
+the data is under its Windows user's AppData/Roaming/Forte/Agent.
+Determine the corresponding data location in your own installation;
+do not assume that copying the program directory also copies the mail.
+
+Preserve the whole data directory, not just selected DAT files. Keep
+indexes, account settings, filters and mail UID tracking together.
+Use an independent writable copy, not hard links to your only backup.
+Check both the copy and your desktop user's access to its parent
+directories before launching. Do not let Windows and Wine write the
+same store concurrently.
+
+The first launch should have provider access blocked independently
+of Agent's remembered settings. In that isolated session, check old
+folders and readable messages, then close normally. Stop if Agent
+opens the wrong profile, unexpectedly asks to create a new account,
+or hangs. Do not use the live archive as a succession of experiments.
+
+For reference, our launcher sets WINEDLLOVERRIDES to
+"mscoree=d;winemenubuilder.exe=d". That disables CLR loading and Wine's
+automatic menu generation. It is a setting used here, not a claim that
+every Agent installation needs those overrides.
+
+4. Usenet: what worked, and what the relay does
+
+Giganews header retrieval, article-body retrieval, composition and
+posting have worked. My earlier progress article was posted from
+Agent under Wine and retrieved afterward; this was real Usenet, not
+a local simulation.
+
+We retained my existing Giganews account and used port 119 without
+encryption by my choice. That test does not qualify encrypted NNTP.
+Unencrypted NNTP can expose authentication and article traffic on the
+network; it is not a universal recommendation for other readers.
+
+Our Agent process is network-isolated, so a standard socat byte relay
+provides its selected news connection. It is an access path, not an
+OAuth adapter or an NNTP implementation. Its use here does not prove
+that Agent requires a news proxy in an ordinary Wine installation.
+
+For a first online test on your own setup, retrieve headers and one
+body from an existing subscription before considering a post. Verify
+the group and message type: posting to a newsgroup and emailing a copy
+are separate operations. Inspect old Outbox items first; do not use
+Send All as a connectivity test. Stop on an error or an ambiguous send
+result and check whether the article appeared before attempting a retry.
+
+5. Mail: the substantial extra component
+
+Our current POP arrangement is custom. Agent connects to local POP
+servers; native Linux helpers connect to the real providers using
+certificate-verified TLS. This kept the provider-facing protocol work
+outside Agent while preserving Agent's existing local archive.
+
+On each poll, the helpers inventory the server's UIDL/LIST snapshot,
+compare retained delivery tracking and offer untracked messages to
+Agent. Bodies are fetched on demand rather than loading the whole
+mailbox into memory. Completed delivery is recorded for subsequent
+polls and sessions. Agent continues to apply its local routing filters.
+
+The current safeguards allow up to 1,000 messages and 256 MiB per
+account per poll, with a 10 MiB limit per message and ten polls per
+session. Thus "all new mail" still means within those bounds; another
+successful poll can continue remaining work. Oversized messages are
+left on the server. The old ten-message-per-account restriction no
+longer describes this launcher. A September 17 session committed 333
+messages and closed with all acceptance checks passing.
+
+Keeping server messages is deliberate. The upstream helper does not
+implement POP DELE, and the local side rejects deletion requests.
+Account-level "leave on server" settings alone were not sufficient:
+some existing filters had their own deletion overrides. Those
+overrides were cleared without removing the routing rules and have
+not been restored. Our no-delete policy takes precedence.
+
+This is not something a generic TLS tunnel automatically supplies.
+The repository now includes experimental portable POP source, an offline
+account-setup helper and a Debian launcher. Read pop-bridge/USAGE.md
+for its account/history mapping, limits and normal-close behavior.
+Synthetic tests passed, but the portable combination has not yet been
+qualified with live mail. It is not the complete host deployment:
+SMTP/NNTP relays are not packaged, and a site-specific launch command
+still needs to be prepared. The basic Agent install/open helper does
+not automatically activate POP isolation or no-delete enforcement.
+
+6. Sending and remaining limitations
+
+An AT&T plain-text SMTP test sent from Agent was received successfully.
+The connection used Agent's existing TLS/login settings through a byte
+relay to the selected SMTP service. This establishes that tested path,
+not all providers, attachments, BCC handling or every TLS combination.
+Hotmail's OAuth requirement has not been integrated into our bridge.
+
+My original Usenet article posted successfully while its added email
+BCC failed. A failure of the email copy did not mean the news post
+failed; blindly resending could have produced a duplicate article.
+
+Some font/glyph rendering still needs attention. One separate incident
+in which Subject and Author fields disappeared was traced to a full
+temporary copy-on-write area in the test setup; the fields returned
+after capacity was increased. We did not repair the message indexes.
+Ordinary use now employs persistent disk-backed profile storage, not
+that limited RAM overlay.
+
+Likewise, a later news connection failure came from an expired local
+test relay, not a demonstrated Giganews failure. The ordinary relay
+now remains available for the Agent session's lifetime.
+
+The large store initially made diagnosis difficult, but its size alone
+was not a sufficient explanation. We have retained and used that same
+archive rather than starting over with empty folders. Nothing here
+claims that every message, binary-news feature, or attachment type has
+been exhaustively tested.
+
+7. What I suggest other readers report
+
+If you try Agent under Wine, please give the Agent build, exact Wine
+version and patch status, distribution, desktop/session type, whether
+the profile is new or migrated, and the operation which fails. An
+installer failure, an offline folder-navigation hang and a provider
+authentication rejection are different problems.
+
+The encouraging result is that my established Agent installation is
+useful on Linux for mail and Usenet, including reading and posting.
+The reusable foundation is the working Wine build plus careful
+profile preservation. The provider bridges and remaining display
+issues are separate pieces, not reasons to assume Agent itself
+cannot run under Linux.
+
+Larry
