@@ -1,0 +1,24 @@
+{
+  "version": 1,
+  "state_root": "/home/example/.local/state/agent-pop-bridge",
+  "accounts": [
+    {
+      "name": "personal",
+      "agent_uid": 41,
+      "host": "pop.example.invalid",
+      "port": 995,
+      "username": "reader@example.invalid",
+      "listen_port": 21110,
+      "known_uids_file": "/home/example/agent-profile/mailuids41.dat"
+    },
+    {
+      "name": "second",
+      "agent_uid": 77,
+      "host": "pop.second.example.invalid",
+      "port": 995,
+      "username": "reader@second.example.invalid",
+      "listen_port": 21111,
+      "known_uids_file": "/home/example/agent-profile/mailuids77.dat"
+    }
+  ]
+}
