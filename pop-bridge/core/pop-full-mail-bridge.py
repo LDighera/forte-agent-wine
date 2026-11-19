@@ -22,6 +22,22 @@ import tempfile
 import time
 
 
+def failure_detail(exc):
+    """Finite diagnostic codes only; never persist raw server/exception text."""
+    if isinstance(exc, poplib.error_proto):
+        value = exc.args[0] if exc.args else None
+        # CPython emits strings for these local parser failures; server replies
+        # are bytes. A server saying '-ERR EOF' is therefore not a local EOF.
+        if type(value) is str and value == '-ERR EOF': return 'connection_closed'
+        if type(value) is str and value == 'line too long': return 'response_line_too_long'
+        if type(value) is bytes and value.startswith(b'-ERR'): return 'server_error_response'
+        return 'protocol_error'
+    if isinstance(exc, TimeoutError): return 'timeout'
+    if isinstance(exc, ssl.SSLError): return 'tls_error'
+    if isinstance(exc, OSError): return 'transport_error'
+    return 'other_error'
+
+
 def load(name, filename):
     spec = importlib.util.spec_from_file_location(name, Path(__file__).with_name(filename))
     module = importlib.util.module_from_spec(spec)
@@ -35,12 +51,21 @@ MAX_ROWS = 100_000
 MAX_METADATA_BYTES = 8 * 1024 * 1024
 MAX_MESSAGES = 1000
 MAX_BYTES = 256 * 1024 * 1024
-MAX_MESSAGE = 10 * 1024 * 1024
+MAX_MESSAGE = 30 * 1024 * 1024
 MAX_SECONDS = 3600
 REQUEST = b'FAFM1'
 FETCH = b'FAFR1'
 COMMIT = b'FAFC1'
 ALLOWED = frozenset(('USER', 'PASS', 'STAT', 'UIDL', 'LIST', 'RETR', 'RSET', 'QUIT'))
+
+
+class FullMailRetrReader(C.BoundedRetrReader):
+    """Reuse bounded framing with this lane's limit; legacy reader stays at10MiB."""
+    def __init__(self, client, maximum, aborted):
+        need(type(maximum) is int and 0 < maximum <= MAX_MESSAGE, 'body_limit_invalid')
+        self.client = client
+        self.remaining = maximum
+        self.aborted = aborted
 
 
 def need(ok, category):
@@ -161,6 +186,7 @@ def broker_transaction(base, connection, args, account, number, aggregate, *, fa
     ledger_published = ledger_durable = False
     summary = {}
     status, category, phase = 'failed', 'none', 'local-request'
+    detail = 'none'
     login = False
     connection.settimeout(args.request_timeout)
     report = args.evidence_dir / f'transaction-{number:04d}-upstream.txt'
@@ -218,7 +244,7 @@ def broker_transaction(base, connection, args, account, number, aggregate, *, fa
                  'message_identity_changed')
             phase = 'retr'; commands.append('RETR')
             _, lines, _ = base.retr_bounded(
-                C.BoundedRetrReader(client, MAX_MESSAGE, base.BridgeConnectionAborted),
+                FullMailRetrReader(client, MAX_MESSAGE, base.BridgeConnectionAborted),
                 item.server_number, MAX_MESSAGE)
             body = base.canonical_message(lines, MAX_MESSAGE)
             need(actual_octets + len(body) <= MAX_BYTES, 'content_byte_limit')
@@ -243,6 +269,7 @@ def broker_transaction(base, connection, args, account, number, aggregate, *, fa
         aggregate.selected_octets += actual_octets
         status = 'complete'
     except Exception as exc:
+        detail = failure_detail(exc)
         C.disable_provider(args)
         aggregate.failed += 1
         category = exc.category if isinstance(exc, C.SessionBridgeError) else type(exc).__name__.lower()
@@ -258,6 +285,7 @@ def broker_transaction(base, connection, args, account, number, aggregate, *, fa
             except Exception:
                 pass
         data = dict(transaction=number, status=status, failure_category=category,
+                    failure_detail=detail,
                     protocol='full-mail-v1', commands_sent=','.join(commands),
                     selected_messages=len(offered), fetched_messages=len(fetched),
                     committed_messages=len(committed) if ledger_published else 0,

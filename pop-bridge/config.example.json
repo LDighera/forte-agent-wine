@@ -9,7 +9,7 @@
       "port": 995,
       "username": "reader@example.invalid",
       "listen_port": 21110,
-      "known_uids_file": "/home/example/agent-profile/mailuids41.dat"
+      "known_uids_file": "/home/example/agent-pop-setup/history/personal.dat"
     },
     {
       "name": "second",
@@ -18,7 +18,7 @@
       "port": 995,
       "username": "reader@second.example.invalid",
       "listen_port": 21111,
-      "known_uids_file": "/home/example/agent-profile/mailuids77.dat"
+      "known_uids_file": "/home/example/agent-pop-setup/history/second.dat"
     }
   ]
 }

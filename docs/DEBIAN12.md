@@ -2,6 +2,9 @@
 
 ## 1. Read this first
 
+For definitions of Wine prefix, Agent profile and download history, and for the
+overall order of work, read [Start here](START-HERE.md).
+
 These instructions reconstruct the configuration working on Larry's Debian 12
 amd64 computer with KDE/X11. **They have not been tested end to end on a clean
 Debian installation.** The dependency list may need adjustment on another host.
@@ -106,17 +109,19 @@ wine-11.14. The source check matters; a version string alone is insufficient.
 
 ## 5. Install your own Agent copy
 
-On your Debian desktop, place your own original **agentenu800-1272.msi** in the
-repository's debian/ directory. Review the applicable license terms before
+On your Debian desktop, keep your own original **agentenu800-1272.msi** in your
+Downloads directory, outside this source package. Review the applicable license terms before
 using the silent installation command. Do not obtain the installer from an
 untrusted substitute. The installer is not supplied by this repository; never
 commit or upload it. The repository's ignore patterns are not a privacy guarantee.
 
-As your ordinary user in that folder, run the following command **without sudo**.
+As your ordinary user in the repository's debian/ directory, run the following
+command **without sudo**. It assumes the MSI has the exact name shown in Downloads;
+if it is elsewhere, replace only that installer path with its actual location.
 It uses the private Wine build and creates a fresh agent-prefix beneath the build
 area. It refuses an existing prefix or install log. Copy into that terminal:
 
-> bash agent-debian12.sh install "$HOME/agent-wine-debian12" ./agentenu800-1272.msi
+> bash agent-debian12.sh install "$HOME/agent-wine-debian12" "$HOME/Downloads/agentenu800-1272.msi"
 
 Expected result: "Agent installed; no account or mail archive imported."
 Stop on an error or unexpected prompt; inspect agent-install.log in the build
@@ -147,8 +152,8 @@ the same Agent instance is open. Copy into that terminal:
 3. In that empty main window, select **Inbox**, then **Drafts**. Expect empty,
    responsive panes. Stop on a hang or error. We did not test composition in this
    fresh no-account profile; do not infer it from this navigation check.
-4. With Agent responsive and no popup visible, press **Alt+F4** once to close the
-   outer application. Expect the window to disappear and the terminal to report
+4. With Agent responsive and no popup visible, use Agent's **File → Exit** command to close the application. Avoid a terminal
+   shortcut if you are unsure which window has focus. Expect the window to disappear and the terminal to report
    that Agent and its Wine processes exited normally. If hung or a popup appears,
    stop and inspect rather than force-close or launch another copy.
 
@@ -172,8 +177,9 @@ writable store between Windows and Wine or hard-link it to the only backup.
 This basic installation does not activate the POP bridge, duplicate tracking,
 no-delete enforcement, SMTP relay or NNTP relay. After it works, the optional
 [POP guide](../pop-bridge/USAGE.md) explains the separately supplied receiving
-component and its additional Python/Bubblewrap prerequisites. SMTP and NNTP
-relays are not packaged here. Do not poll a real mailbox assuming the custom
+component and its additional Python/Bubblewrap prerequisites. Parameterized SMTP/NNTP transports and the desktop frontend are described in
+[desktop setup](../pop-bridge/DESKTOP.md); one AT&T plain-text SMTP send and independent receipt passed; live NNTP and
+combined multi-account POP tests remain deferred. Do not poll a real mailbox assuming the custom
 no-delete guarantee applies to an ordinary Agent configuration; saved filters
 can override account-level retention settings.
 

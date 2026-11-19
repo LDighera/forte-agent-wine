@@ -2,12 +2,17 @@
 
 Experimental source preview, not a production-qualified installer. These steps
 describe the intended workflow; review your specific paths and account mapping
-before local activation. Begin with a disposable profile and recoverable backups,
-not your only working mail archive. No existing profile is modified automatically.
+before launching. Start with the fresh empty Agent copy described in
+[Start here](../docs/START-HERE.md); keep your existing saved messages and settings
+unchanged. No existing profile is modified automatically. A profile is Agent's
+local data directory, not an account with your mail provider.
 
-This subdirectory supplies POP receiving only. It does not supply SMTP sending, NNTP,
-OAuth, an Agent license, or the patched Wine build. It does not reproduce every
-feature of Larry's separately configured Mail and News launcher.
+This guide covers the POP receiving component. Optional SMTP/NNTP TCP relays
+and the coordinated desktop launcher are documented in [DESKTOP.md](DESKTOP.md);
+one plain-text AT&T SMTP test and independent receipt passed; NNTP qualification
+is deferred for this release. No OAuth service, Agent license
+or patched Wine binary is supplied. This portable candidate does not reproduce
+every feature of the established Mail and News launcher.
 
 # 2. Prerequisites and private layout
 
@@ -55,7 +60,12 @@ rejects overlong paths; no automatic relocation or permission repair occurs.
    and any previous bridge normally before preparing delivery-history snapshots.
    Expected: no writer can change those snapshots. Stop if a profile is still in
    use, a window is hung, or the source account is uncertain; do not force-close.
-2. On that same host, prepare private copies of each account's newline-separated
+2. This step requires already prepared history in the supported format. The
+   package has no converter for Agent's native `mailuids*.dat` records, which
+   may contain extra metadata. Do not feed those files directly to the helper
+   or assume that changing their extension converts them. If you cannot verify
+   the format/account mapping, obtain migration assistance before proceeding.
+   On that same host, prepare private copies of each account's newline-separated
    POP UID history, including any old bridge's committed-delivery ledger.
    Expected: complete history for that mailbox, with snapshots owned by this user
    and mode 0600. Stop on missing or ambiguous history. Message DAT/IDX files and
@@ -91,7 +101,7 @@ interchangeable settings.
 
 | Setting | Portable configuration | Agent inbound account |
 | --- | --- | --- |
-| Account identity | `agent_uid`, with verified history for that account | The same actual inbound account, not a new guessed duplicate |
+| Account identity | `agent_uid`, with verified history for that account | The same actual inbound account, not a new guessed duplicate; identify it privately before running setup |
 | POP server | `host`: real provider hostname | `127.0.0.1` |
 | POP port | `port`: provider implicit-TLS port | Matching account's `listen_port` |
 | Login | `username`: exact provider login | Exactly the same login |
@@ -104,10 +114,14 @@ For example, the fictitious account `personal` in config.example.json maps to
 loopback port 21110; `second` maps to 21111. Those example provider names do not
 resolve and the example UIDs are not recommendations for a real profile.
 
-After activation is separately approved, configure the corresponding inbound
+Before the first receiving test, configure the corresponding inbound
 accounts through Agent's Tools → Servers and Accounts in the intended profile.
-Do not modify outbound/SMTP accounts. Disable automatic polling and automatic
-failed-task retries for initial use. Review the account selection before a manual
+Leave outbound/SMTP accounts for the separate desktop relay instructions.
+Disable scheduled retrieval (including the account wizard's regular-retrieval
+option), startup retrieval and automatic failed-task retries for initial use.
+Do not click Test Connection while configuring. If configuring an imported
+profile, block provider access independently first; this release does not
+supply a generic offline account-configuration launcher. Review the account selection before a manual
 poll. Stop on an unexpected account, error dialog or missing mapping; do not test
 ordinary provider hostnames from inside the isolated Agent session.
 
@@ -135,18 +149,19 @@ This is an input reference, **not a command to reconstruct manually**:
 | `--xauthority` | Current desktop user's X11 authorization file |
 | Arguments after `--` | Exact Windows path to the installed Agent executable and its required arguments |
 
-Before first activation, put the verified local values in a short per-user launch
-script and review it. Do not copy Larry's host-specific launcher or hand-transcribe
-a long command. That site-specific invocation is intentionally not supplied here:
-the correct prefix, data layout and account mapping depend on your installation.
+For the ordinary desktop path, use [DESKTOP.md](DESKTOP.md) and its new-only
+setup helper. It records the verified local paths and supplies the launch
+invocation. Do not hand-transcribe a long command or copy the working host's
+private launcher. The lower-level interface above remains a developer reference;
+invoking it directly bypasses the desktop prefix lock and completion journal.
 
 The `session` role selects all configured accounts; it does not accept `--account`.
-It starts the brokers and local listeners before the application. The terminal
-must remain open. No poll is initiated by the launcher. Use Agent's ordinary Get
+It starts the brokers and local listeners before the application. If you use this lower-level developer interface, its terminal
+must remain open. The normal desktop menu entry does not open a terminal. No poll is initiated by the launcher. Use Agent's ordinary Get
 New Email only after its inbound account mappings have been verified.
 
 Current unchanged limits are 10 local connections per account per session,
-up to 1,000 selected messages / 256 MiB per account transaction, a 10 MiB per-message
+up to 1,000 selected messages / 256 MiB per account transaction, a 30 MiB per-message
 limit, and bounded metadata/time. These are upper bounds, not promised throughput.
 Large or deferred messages may remain on the server; a zero result does not prove
 that every server message has been downloaded. Hitting a worker limit currently
@@ -154,7 +169,7 @@ stops the session's mail service rather than silently restarting it.
 
 # 6. Normal close, errors and recovery
 
-1. During an approved session, on the Linux desktop as the same user, finish the
+1. During a session, on the Linux desktop as the same user, finish the
    current Agent operation before closing its main window normally. Expected:
    Wine and its matching wineserver exit, then the listeners and brokers finish
    and the terminal returns. Stop if a popup or hang prevents normal closure;
@@ -164,7 +179,7 @@ stops the session's mail service rather than silently restarting it.
    in-flight work can finish. Close normally only when responsive and no modal
    dialog prevents it. Do not retry, clear a provider-disable marker, reset a
    ledger, or reuse the session directory. Retain evidence for inspection.
-3. On an approved stop request, Ctrl+C in that same terminal asks workers to stop
+3. For a developer-launched terminal session only, Ctrl+C asks workers to stop
    after current work; it does not close Agent for you. Expected: a stop warning
    and normal-close wait. Stop manual input if Agent is unresponsive; the helper
    does not have an automatic force-close or recovery path.
@@ -178,13 +193,16 @@ disk-full, or uncertain commit requires inspection, not automatic retry.
 # 7. Release status and exclusions
 
 Provider-free protocol, state and multi-process tests passed; a disposable-profile
-GUI/navigation/normal-close test passed on the actual desktop account. The
-portable multi-account combination has not been tested with real credentials or
-a real mail store. This draft is not a migration or production activation grant.
+GUI/navigation/normal-close test passed on the actual desktop account. One AT&T receiving test delivered 208 messages and closed normally. One
+plain-text AT&T SMTP send and independent receipt also passed. Combined live
+multi-account POP and live NNTP tests were deferred, not assumed successful.
+These results do not establish unattended migration of an existing archive.
 
 The included bridge source and documentation carry the [MIT license](../LICENSE).
 Source-only packaging excludes records, private setup, AGENT.INI, mail, UID ledgers,
 credentials, Wine/Agent binaries and stale test-only launch artifacts. Do not
 upload your private development or runtime directories wholesale. The license
 is not a claim of production qualification. No
-clean-OS rebuild, OAuth, SMTP/NNTP or larger-message work is implied.
+clean-OS rebuild, OAuth, general SMTP attachments or live NNTP qualification is
+implied. The 30 MiB whole-message receiving limit is covered by offline tests;
+this is not a promise that every 20 MiB attachment fits every provider limit.

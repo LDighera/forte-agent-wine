@@ -1,5 +1,17 @@
 # Forté Agent 8 under Wine: guide, Debian recipes and POP bridge
 
+**Release candidate 2026.11.18-rc2.** This update ports the tested
+30 MiB whole-message receiving limit and includes reproducible offline tests.
+Parameterized SMTP/NNTP relays, a terminal-free desktop frontend, filtered browser
+handoff and conservative completed-session recovery are now included. One AT&T
+receiving transaction (208 messages) and clean shutdown have passed; combined live
+POP and NNTP qualification are deferred for this release. One plain-text AT&T SMTP send,
+independent receipt and clean shutdown have also passed. Fresh isolated installation, empty-profile
+navigation/closure, Wine file access, and actual Agent synthetic-message import,
+browser-link opening and attachment saving have passed.
+See [release notes](docs/RELEASE-2026.11.18.md),
+[dependency inventory](docs/DEPENDENCIES.md), and [qualification details](docs/PREPARATION.md).
+
 Keep an established Agent installation useful on Linux. This repository brings
 together the experience report and Debian build/install recipes originally
 published at [wb6bbb.com/agent-wine](https://wb6bbb.com/agent-wine/), plus the
@@ -12,6 +24,11 @@ You supply your own licensed Agent installer. Wine source and Debian packages ar
 downloaded separately by the build workflow; no proprietary software, accounts,
 credentials or messages are included here.
 
+**Read [Start here](docs/START-HERE.md) first.** It defines the terms used below,
+explains the installation order and backup procedure, and separates empty-copy
+testing from migration. Native Agent download-history conversion and automatic
+archive migration are not supplied.
+
 ## 1. Choose your starting point
 
 | Your goal | Read or use |
@@ -20,7 +37,7 @@ credentials or messages are included here.
 | Build Wine and install a fresh Agent on Debian 12 | [Debian instructions](docs/DEBIAN12.md), using the files in [debian/](debian/) |
 | Preserve an existing message store | [Profile-preservation checklist](docs/EXPERIENCE.md#4-preserve-the-profile-before-testing), after fresh-profile operation works |
 | Explore the portable POP receiving bridge | [POP usage and account mapping](pop-bridge/USAGE.md), then [offline setup](pop-bridge/SETUP.md) |
-| Understand Usenet or outgoing-mail results | [News and SMTP observations](docs/EXPERIENCE.md#5-usenet-and-outgoing-mail); these relays are not packaged here |
+| Understand Usenet or outgoing-mail results | [Desktop and relay setup](pop-bridge/DESKTOP.md); one plain-text SMTP test passed; live NNTP qualification is deferred |
 
 Download the complete repository with GitHub's **Code → Download ZIP**, or clone
 it. Keep its directory structure intact. Follow the working-directory instructions
@@ -33,6 +50,7 @@ README.md                 Starting point and qualification limits
 LICENSE                   MIT terms for this project's code and documentation
 SHA256SUMS                Checksums for the other distributed files
 docs/
+  START-HERE.md           Plain-language sequence, definitions and backup guidance
   EXPERIENCE.md           Working-host results and troubleshooting lessons
   DEBIAN12.md             Dependency, build, install and first-opening procedure
   agent-wine-guide.txt    Plain-text account of the same experience
@@ -45,6 +63,12 @@ pop-bridge/
   config.example.json    Fictitious settings, never a ready-to-use account
   setup_bridge.py        Interactive offline configuration/history import
   debian_launcher.py     Isolated multi-account POP/Agent session coordinator
+  DESKTOP.md             Desktop, relay, browser and recovery instructions
+  setup_desktop.py       New-only private desktop and attachment-folder setup
+  desktop.py             Terminal-free frontend and prefix session lock
+  relay_services.py      Parameterized SMTP/NNTP socat transports
+  browser_portal.py      Method-filtered desktop portal connection
+  open_url.py            HTTP(S) link handoff for Wine
   ...                    Worker, state and configuration modules
   core/                  Internal protocol dependencies, not standalone tools
 ```
@@ -68,21 +92,22 @@ is distributed. Keep files generated during setup outside the source repository.
    isolation before opening imported accounts. Never share one writable store
    between Windows and Wine.
 4. **Treat POP integration as a separate experiment.** Review the bridge's account
-   mapping and disjoint directory layout. Import complete existing delivery
-   history before activating an established mailbox. A site-specific launch
-   invocation still needs to be prepared; the repository does not automatically
-   discover your profile, account UIDs or credentials.
+   mapping and disjoint directory layout. If you intend to suppress previously received mail, import verified download
+   history for that provider mailbox. A fresh copy will not acquire old local
+   messages merely by importing their history. The helper accepts prepared text
+   lists; it does not convert Agent native history files. Then follow [desktop setup](pop-bridge/DESKTOP.md). The repository does not
+   automatically discover your profile, account UIDs or credentials.
 
 ## 4. Two launchers, different purposes
 
 | | Basic Agent helper | Portable POP session |
 | --- | --- | --- |
-| Entry point | `debian/agent-debian12.sh` | `pop-bridge/debian_launcher.py` |
+| Entry point | `debian/agent-debian12.sh` | Menu entry created by `pop-bridge/desktop.py` |
 | Purpose | Install/open a fresh Wine prefix | Run configured POP brokers and isolated Agent/listeners |
 | Network isolation | **None supplied** | Separate provider brokers; Agent gets loopback-only networking |
 | Server no-delete enforcement | **None supplied** | Upstream DELE absent; local deletion requests refused |
 | Account setup | No account import | Offline helper plus explicit Agent account mapping |
-| SMTP/NNTP | Not configured by the helper | Not supplied by this portable package |
+| SMTP/NNTP | Not configured by the helper | Optional explicit routes; Agent supplies matching TLS/auth settings |
 
 Do not assume the basic helper inherits the bridge's no-delete or isolation
 protections. Do not invoke legacy command-line interfaces under `pop-bridge/core/`.
@@ -95,7 +120,8 @@ and repeated normal closes succeeded. Details and unresolved display issues are
 in the experience report. Those results apply to the host's configured deployment,
 not automatically to every component in this portable repository.
 
-For the portable bridge, synthetic tests covered transactions, state, duplicate
+The expanded portable source suite now passes 151 offline tests. It covers
+transactions, state, duplicate
 tracking, no-delete behavior and launcher failures. A real two-account,
 separate-process test delivered synthetic mail without contacting providers.
 Agent GUI navigation and normal Wine/server exit were tested separately with a
@@ -103,9 +129,25 @@ disposable profile under the actual desktop user.
 
 **Not established:** an end-to-end clean-Debian build using these exact wrapper
 scripts; Linux Mint or Wayland compatibility; live-mail qualification of the
-portable multi-account combination; SMTP/NNTP relay packaging; Hotmail/OAuth;
+portable multi-account combination; portable NNTP provider qualification; general SMTP/attachment support; Hotmail/OAuth;
 complete attachment, printing, sound or binary-news compatibility. The build
 recipes were reconstructed and checked, not rerun as a clean-machine rebuild.
+
+The first portable live receiving attempt completed provider authentication, but
+failed while obtaining the mailbox size list. No messages were retrieved. This
+was followed by a separately approved retry that successfully received 208 messages
+through the broker and local listener, with no server deletions and clean session
+closure. This establishes one AT&T POP receiving test, not multi-account or SMTP/NNTP
+qualification. The diagnostic improvement is covered by offline tests; its new
+failure notice has not yet been observed during a live provider failure.
+
+November 18: one plain-text self-addressed SMTP test succeeded through the portable
+TLS relay, and the recipient confirmed receipt. Agent and its relays then closed
+cleanly. The corrected test used the existing POP login for SMTP and explicitly
+requested TLS 1.2. An earlier attempt had been rejected with AUTH0055; the later
+success does not isolate whether credential selection, elapsed time, or both
+resolved that rejection. No private credentials or received headers are distributed.
+This qualifies that one SMTP workflow, not all providers or outgoing attachments.
 
 ## 6. POP behavior and current limits
 
@@ -115,7 +157,7 @@ the mailbox inventory with retained delivery history. Messages are offered on
 demand and committed delivery tracking survives sessions. Agent retains its
 ordinary local routing filters. Upstream messages are never deleted by the bridge.
 
-Limits include 1,000 selected messages and 256 MiB per account transaction, 10 MiB
+Limits include 1,000 selected messages and 256 MiB per account transaction, 30 MiB
 per message, and ten local connections per account per session. Oversized or
 resource-deferred mail can remain on the server. Connection-limit exhaustion can
 stop the portable session's mail service while Agent is still open. On an error,

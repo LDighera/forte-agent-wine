@@ -2,7 +2,8 @@
 
 An explicit fake provider factory and already-connected local socket are supplied
 by tests. This module binds no listener, contacts no provider on import, and never
-parses AGENT.INI. Core transaction code remains byte-identical to production.
+parses AGENT.INI. The full-mail transaction implementation follows the tested
+production code; portable paths and disabled legacy CLI entrypoints differ.
 """
 from contextlib import contextmanager
 import importlib.util

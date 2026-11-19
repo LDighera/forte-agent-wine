@@ -11,10 +11,13 @@ import time
 
 import account_state as S
 import bridge_config as C
+import relay_services as R
+import attachment_folders as F
+import diagnostics as D
 from setup_bridge import check_user
 
 PACKAGE = Path(__file__).resolve().parent
-CODE = ('debian_launcher.py', 'wine_lifetime.py', 'bridge_worker.py', 'runtime_adapter.py',
+CODE = ('debian_launcher.py', 'wine_lifetime.py', 'relay_services.py', 'attachment_folders.py', 'diagnostics.py', 'bridge_worker.py', 'runtime_adapter.py',
         'account_state.py', 'bridge_config.py', 'setup_bridge.py')
 CORE = ('pop-full-mail-bridge.py', 'pop-nominal-session-bridge.py',
         'pop-bounded-bridge.py', 'pop_backlog.py', 'pop_catchup_budget.py')
@@ -31,7 +34,7 @@ def path_checked(value):
 
 
 def sandbox(role, config_path, config, account, run, command, *, prefix=None,
-            wine_root=None, display=None, xauthority=None):
+            wine_root=None, display=None, xauthority=None, services_path=None, browser_socket=None, attachment_folders=()):
     """Return argv only. No shell evaluation, installation or host mutation."""
     S.need(role in ('broker', 'client'), 'invalid_role')
     S.need(account in config.accounts, 'unknown_account')
@@ -58,6 +61,21 @@ def sandbox(role, config_path, config, account, run, command, *, prefix=None,
         args += ['--perms', '0700', '--dir', str(config.state_root),
                  '--bind', str(state), str(state)]
     else:
+        protected = [config_path, config.state_root, run, PACKAGE.parent]
+        protected += [a.known_uids_file for a in config.accounts]
+        protected += [Path(x) for x in (prefix, wine_root, xauthority, services_path) if x is not None]
+        for row in F.validate(list(attachment_folders), protected=protected):
+            args += ['--ro-bind' if row['mode']=='ro' else '--bind', row['path'], row['path']]
+        if browser_socket is not None:
+            browser_socket = path_checked(browser_socket)
+            args += ['--ro-bind', str(browser_socket), '/tmp/agent-browser-bus',
+                     '--setenv', 'DBUS_SESSION_BUS_ADDRESS', 'unix:path=/tmp/agent-browser-bus',
+                     '--ro-bind', str(PACKAGE/'open_url.py'), '/usr/bin/xdg-open']
+        if services_path is not None:
+            services_path = path_checked(services_path)
+            R.load(services_path, config)
+            args += ['--ro-bind', str(services_path), str(services_path),
+                     '--ro-bind', str(run/'.services-hosts'), '/etc/hosts']
         if prefix is not None:
             prefix = path_checked(prefix)
             S.need(prefix.is_dir(), 'prefix_not_directory')
@@ -85,7 +103,7 @@ def client_session(config_path, account, run, application):
     return client_sessions(config_path, [(account, run)], application)
 
 
-def client_sessions(config_path, account_runs, application):
+def client_sessions(config_path, account_runs, application, *, routes=(), relay_root=None):
     """Start all listeners before one application in this client's namespace.
 
     Each account has its own broker/run directory.
@@ -106,6 +124,7 @@ def client_sessions(config_path, account_runs, application):
     application_process = None
     requested = False
     previous = {}
+    relays = R.Fleet(routes, relay_root, 'client')
     def request_stop(*_):
         nonlocal requested
         requested = True
@@ -114,6 +133,7 @@ def client_sessions(config_path, account_runs, application):
     try:
         for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
             previous[sig] = signal.signal(sig, request_stop)
+        relays.start()
         for account, run in account_runs:
             log = (run/'client-session.log').open('xb')
             logs.append(log)
@@ -124,19 +144,23 @@ def client_sessions(config_path, account_runs, application):
                                               start_new_session=True))
         deadline = time.monotonic()+15
         while not all((run/'listener/ready').is_file() for _, run in account_runs):
-            S.need(all(p.poll() is None for p in listeners) and
+            S.need(not relays.failed() and all(p.poll() is None for p in listeners) and
                    time.monotonic() < deadline and not stopping(),
                    'listener_not_ready')
             time.sleep(0.05)
-        S.need(all(p.poll() is None for p in listeners) and not stopping(),
+        S.need(not relays.failed() and all(p.poll() is None for p in listeners) and not stopping(),
                'listener_stopped_before_app')
         application_process = subprocess.Popen(application, start_new_session=True)
         warned = False
         while application_process.poll() is None:
-            if stopping() or any(p.poll() is not None for p in listeners):
+            if stopping() or relays.failed() or any(p.poll() is not None for p in listeners):
                 if not warned:
+                    for _, run in account_runs:
+                        try: S.new_file(run/'stop', b'client component stopped\n')
+                        except FileExistsError: pass
                     for listener in listeners:
                         if listener.poll() is None: listener.terminate()
+                    relays.close()
                     print('MAIL STOPPED: stop polling; close the application normally. It will not be force-closed.',
                           file=sys.stderr, flush=True)
                     warned = True
@@ -146,7 +170,7 @@ def client_sessions(config_path, account_runs, application):
         # Wait for every listener, even if an earlier one failed.
         returncodes = [listener.wait() for listener in listeners]
         S.need(application_process.returncode == 0 and
-               all(code == 0 for code in returncodes) and not warned,
+               all(code == 0 for code in returncodes) and not warned and not relays.failed(),
                'client_session_not_accepted')
     finally:
         for listener in listeners:
@@ -157,6 +181,7 @@ def client_sessions(config_path, account_runs, application):
         if application_process is not None and application_process.poll() is None:
             print('Close the application normally; no force-close will be sent.', file=sys.stderr)
             application_process.wait()
+        relays.close()
         for sig, handler in previous.items(): signal.signal(sig, handler)
         for log in logs: log.close()
 
@@ -170,15 +195,24 @@ def wine_application(application, prefix=None, wine_root=None):
             '--wine-root', str(wine_root), '--prefix', str(prefix), '--']+list(application)
 
 
-def launch_session(config_path, config, run, application, **mounts):
+def launch_session(config_path, config, run, application, *, notify=None, **mounts):
     """One outer invocation, separate broker sandboxes, one isolated client.
 
     Stop files cross the sandbox boundary without terminating Bubblewrap (which
     could tear down Wine or an in-flight commit). No forced close or restart.
     """
     run = S.directory(path_checked(run))
-    S.need(not any(run.iterdir()), 'session_directory_not_empty')
+    expected = {mounts['browser_socket']} if mounts.get('browser_socket') is not None else set()
+    S.need(set(run.iterdir()) == expected, 'session_directory_not_empty')
     application = wine_application(application, mounts.get('prefix'), mounts.get('wine_root'))
+    services_path = mounts.get('services_path')
+    routes = R.load(services_path, config) if services_path is not None else ()
+    if services_path is not None:
+        S.new_file(run/'.services-hosts', R.hosts(routes))
+    relay_root = run/'.services'
+    if routes:
+        relay_root.mkdir(mode=0o700)
+    relays = R.Fleet(routes, relay_root, 'broker')
     account_runs = [(a, run/a.name) for a in config.accounts]
     commands = []
     # Construct every command before starting any child.
@@ -188,9 +222,10 @@ def launch_session(config_path, config, run, application, **mounts):
                   '--config', str(config_path), '--account', account.name,
                   '--run-directory', str(child_run)]
         commands.append(sandbox('broker', config_path, config, account, child_run, worker))
+    relay_options = ['--services', str(services_path)] if services_path is not None else []
     client_command = sandbox('client', config_path, config, config.accounts[0], run,
         ['/usr/bin/python3', '/opt/agent-bridge/debian_launcher.py', 'inside-client-all',
-         '--config', str(config_path), '--run-directory', str(run), '--']+application, **mounts)
+         '--config', str(config_path), '--run-directory', str(run)]+relay_options+['--']+application, **mounts)
     processes, logs, previous = [], [], {}
     client = None
     requested = False
@@ -204,6 +239,7 @@ def launch_session(config_path, config, run, application, **mounts):
     try:
         for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
             previous[sig] = signal.signal(sig, request_stop)
+        relays.start()
         for (account, _), command in zip(account_runs, commands):
             S.need(not requested, 'session_interrupted_before_ready')
             log = (run/(account.name+'-broker.log')).open('xb')
@@ -212,7 +248,7 @@ def launch_session(config_path, config, run, application, **mounts):
                                               start_new_session=True))
         deadline = time.monotonic()+15
         while True:
-            S.need(not requested and all(p.poll() is None for p in processes),
+            S.need(not requested and not relays.failed() and all(p.poll() is None for p in processes),
                    'broker_stopped_before_client')
             if all((r/'broker-ready.json').is_file() for _, r in account_runs): break
             S.need(time.monotonic() < deadline, 'brokers_not_ready')
@@ -220,17 +256,24 @@ def launch_session(config_path, config, run, application, **mounts):
         client = subprocess.Popen(client_command, start_new_session=True)
         warned = False
         while client.poll() is None:
-            if requested or any(p.poll() is not None for p in processes):
+            if requested or relays.failed() or any(p.poll() is not None for p in processes):
                 if not warned:
                     mark_stop()
                     print('SESSION STOP: stop polling and close the application normally; no force-close.',
                           file=sys.stderr, flush=True)
                     warned = True
+                    if notify is not None:
+                        details = [f'Mail account {a.agent_uid}: {text}'
+                                   for a, directory in account_runs
+                                   if (text := D.describe(directory)) is not None]
+                        notify(('\n\n'.join(details)+'\n\n' if details else '') +
+                               'Mail or news service stopped. Stop sending and polling. '
+                               'Close Agent normally when responsive. Do not launch another instance.')
             time.sleep(0.2)
         mark_stop()
         statuses = [p.wait() for p in processes]
         S.need(client.returncode == 0 and all(code == 0 for code in statuses) and
-               not warned and not requested, 'multi_session_not_accepted')
+               not warned and not requested and not relays.failed(), 'multi_session_not_accepted')
     finally:
         mark_stop()
         # Keep the client namespace until the application closes normally.
@@ -238,6 +281,7 @@ def launch_session(config_path, config, run, application, **mounts):
             print('Close the application normally; no force-close will be sent.', file=sys.stderr)
             client.wait()
         for process in processes: process.wait()
+        relays.close()
         for sig, handler in previous.items(): signal.signal(sig, handler)
         for log in logs: log.close()
 
@@ -253,6 +297,7 @@ def main(argv=None):
     parser.add_argument('--wine-root', type=Path)
     parser.add_argument('--display')
     parser.add_argument('--xauthority', type=Path)
+    parser.add_argument('--services', type=Path)
     raw = list(sys.argv[1:] if argv is None else argv)
     separator = raw.index('--') if '--' in raw else len(raw)
     application = raw[separator+1:]
@@ -261,15 +306,19 @@ def main(argv=None):
         check_user()
         os.umask(0o077)
         config = C.parse(S.read_private(args.config, 65536).decode())
+        S.need(args.services is None or args.role in ('session', 'inside-client-all'),
+               'services_require_complete_session')
         if args.role in ('session', 'inside-client-all'):
             S.need(args.account is None, 'all_accounts_role_disallows_account')
             if args.role == 'inside-client-all':
+                routes = R.load(args.services, config) if args.services is not None else ()
                 client_sessions(args.config, [(a, args.run_directory/a.name) for a in config.accounts],
-                                application)
+                                application, routes=routes, relay_root=args.run_directory/'.services')
             else:
                 launch_session(args.config, config, args.run_directory, application,
                                prefix=args.prefix, wine_root=args.wine_root,
-                               display=args.display, xauthority=args.xauthority)
+                               display=args.display, xauthority=args.xauthority,
+                               services_path=args.services)
             return 0
         account = next((a for a in config.accounts if a.name == args.account), None)
         S.need(account is not None, 'unknown_account')

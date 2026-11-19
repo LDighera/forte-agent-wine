@@ -19,6 +19,7 @@ from types import SimpleNamespace
 import account_state as S
 import bridge_config as C
 import runtime_adapter as R
+import diagnostics as D
 from setup_bridge import check_user
 
 
@@ -87,6 +88,12 @@ def broker(config, account, run, stop, *, factory=R.FULL.FullPOP, limit=10):
             R.FULL.C.atomic_write(log, aggregate.text('stopped'))
             return 0
         except Exception:
+            # Diagnostics must never replace the original failure or its stop.
+            try:
+                D.record(run, runtime.args.evidence_dir /
+                         f'transaction-{runtime.count:04d}-upstream.txt')
+            except (OSError, ValueError, TypeError):
+                pass
             R.FULL.C.atomic_write(log, aggregate.text('failed'))
             raise
         finally:

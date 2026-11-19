@@ -8,7 +8,10 @@ docs/DEBIAN12.md; its scripts and package list are in debian/. Portable
 POP receiving is a separate stage described in pop-bridge/USAGE.md.
 This text records the working host, not a turnkey installer or proof
 of the portable package on a fresh machine. Packaging references were
-updated September 20, 2026; the host observations remain as recorded.
+updated November 18, 2026; the September host observations remain historical.
+For current definitions, backup steps and setup order, read docs/START-HERE.md.
+The package does not automatically migrate an archive or convert native Agent
+download-history files. Current release scope is docs/RELEASE-2026.11.18.md.
 
 Several readers asked how I got Forte Agent working under Linux. Here
 are the components and the practical sequence that worked here, plus
@@ -152,9 +155,9 @@ Agent. Bodies are fetched on demand rather than loading the whole
 mailbox into memory. Completed delivery is recorded for subsequent
 polls and sessions. Agent continues to apply its local routing filters.
 
-The current safeguards allow up to 1,000 messages and 256 MiB per
+The September host safeguards allowed up to 1,000 messages and 256 MiB per
 account per poll, with a 10 MiB limit per message and ten polls per
-session. Thus "all new mail" still means within those bounds; another
+session. The November portable package raises that per-message limit to 30 MiB. Thus "all new mail" still means within those bounds; another
 successful poll can continue remaining work. Oversized messages are
 left on the server. The old ten-message-per-account restriction no
 longer describes this launcher. A September 17 session committed 333
@@ -171,10 +174,11 @@ This is not something a generic TLS tunnel automatically supplies.
 The repository now includes experimental portable POP source, an offline
 account-setup helper and a Debian launcher. Read pop-bridge/USAGE.md
 for its account/history mapping, limits and normal-close behavior.
-Synthetic tests passed, but the portable combination has not yet been
-qualified with live mail. It is not the complete host deployment:
-SMTP/NNTP relays are not packaged, and a site-specific launch command
-still needs to be prepared. The basic Agent install/open helper does
+As of November 18, the package also includes SMTP/NNTP relays and a
+desktop-entry generator. The complete-message limit is now 30 MiB.
+One AT&T receiving session and one plain-text SMTP send with confirmed
+receipt passed. Live combined-account POP and NNTP tests remain deferred.
+The separate desktop setup guide supplies the launcher instructions. The basic Agent install/open helper does
 not automatically activate POP isolation or no-delete enforcement.
 
 6. Sending and remaining limitations

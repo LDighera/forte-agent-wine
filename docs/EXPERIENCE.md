@@ -9,8 +9,9 @@ also contains [Debian build/install recipes](DEBIAN12.md) and
 [experimental portable POP source](../pop-bridge/USAGE.md). These are separate
 stages, not a turnkey reproduction of the complete Mail and News deployment.
 
-Host observations recorded September 19, 2026; packaging references updated
-September 20, 2026. Start with the [repository README](../README.md).
+Host observations below are historical, recorded September 19, 2026. Package
+references were updated November 18. Use [Start here](START-HERE.md) for current
+setup instructions and [release notes](RELEASE-2026.11.18.md) for current limits.
 
 **Installation instructions:** see [Agent 8 on Debian 12](DEBIAN12.md) for the
 dependency list, build/install recipes and first-run procedure. These instructions
@@ -175,11 +176,11 @@ delivery tracking and offers untracked messages to Agent. Bodies are fetched
 on demand using disk-backed temporary storage. Agent continues applying its
 local routing filters. Completed deliveries are recorded across sessions.
 
-Current limits are:
+Limits in that September host deployment were (historical, not current package settings):
 
 - Up to 1,000 messages and 256 MiB per account per poll.
 - Up to ten polls per session.
-- A 10 MiB maximum per message.
+- A 10 MiB maximum per message then; the November package limit is 30 MiB.
 - Inventory bounds of 100,000 rows and 8 MiB per metadata response.
 
 The old ten-message-per-account limit no longer describes this launcher.
@@ -198,10 +199,12 @@ the routing rules and have not been restored.
 A generic TLS tunnel does not supply this inventory, duplicate tracking or
 no-delete enforcement. The repository's [portable POP source](../pop-bridge/USAGE.md)
 now extracts these components with explicit account configuration and a Debian
-launcher. Its synthetic tests passed, but the combined portable package has not
-been qualified against live mail. Its worker connection limits and shutdown
-behavior are documented separately. SMTP and NNTP relays remain outside that
-portable package; do not equate this host report with a complete installer.
+launcher. The November 18 portable package includes optional SMTP/NNTP relays and raises
+the complete-message receiving limit to 30 MiB. One AT&T receiving transaction
+and one plain-text SMTP send with confirmed receipt passed. Combined live
+multi-account POP and live NNTP tests remain deferred. Its current limits and
+shutdown behavior are documented in the POP guide; this historical host report
+is not a complete installer or a substitute for those instructions.
 
 ## 7. Troubleshooting lessons and remaining limits
 

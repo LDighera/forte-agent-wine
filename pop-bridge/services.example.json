@@ -1,0 +1,7 @@
+{
+  "version": 1,
+  "routes": [
+    {"name": "outgoing", "kind": "smtp", "host": "smtp.example.invalid", "port": 465, "listen_port": 2465, "security": "implicit-tls"},
+    {"name": "news", "kind": "nntp", "host": "news.example.invalid", "port": 563, "listen_port": 2563, "security": "implicit-tls"}
+  ]
+}
